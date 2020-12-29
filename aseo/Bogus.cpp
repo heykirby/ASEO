@@ -7,6 +7,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/Transforms/Utils/ValueMapper.h"
 #include "llvm/Transforms/Utils/Cloning.h"
+#include <cstdlib>
 using namespace llvm;
 namespace {
     struct Bogus: public FunctionPass{
@@ -61,7 +62,7 @@ namespace {
         Twine* var6 = new Twine("condition2");
         FCmpInst *condition2 = new FCmpInst(*originBB, CmpInst::FCMP_TRUE, LHS, RHS, *var6);
         BranchInst::Create(originalBBpart2, alterBB, (Value *)condition2, originBB);
-        return;
+        //return;
         doF(*F.getParent());
     }
     virtual BasicBlock *createAlteredBasicBlock(BasicBlock *basicBlock, const Twine &Name = "gen", Function *F = 0) {
@@ -272,77 +273,71 @@ namespace {
         } // end of createAlteredBasicBlock()
 
     bool doF(Module &M) {
-            // In this part we extract all always-true predicate and replace them with
-            // opaque predicate: For this, we declare two global values: x and y, and
-            // replace the FCMP_TRUE predicate with (y < 10 || x * (x + 1) % 2 == 0) A
-            // better way to obfuscate the predicates would be welcome. In the meantime
-            // we will erase the name of the basic block     s, the instructions and the
-            // functions.
-
-            //  The global values
-            Twine *varX = new Twine("x");
-            Twine *varY = new Twine("y");
-            Value *x1 = ConstantInt::get(Type::getInt32Ty(M.getContext()), 0, false);
-            Value *y1 = ConstantInt::get(Type::getInt32Ty(M.getContext()), 0, false);
-            GlobalVariable *x = new GlobalVariable(M, Type::getInt32Ty(M.getContext()), false,
-                                                   GlobalValue::CommonLinkage, (Constant *)x1, *varX);
-            GlobalVariable *y = new GlobalVariable(M, Type::getInt32Ty(M.getContext()), false,
-                                                   GlobalValue::CommonLinkage, (Constant *)y1, *varY);
-            std::vector<Instruction *> toEdit, toDelete;
-            BinaryOperator *op, *op1 = NULL;
-            LoadInst *opX, *opY;
-            ICmpInst *condition, *condition2;
-            // Looking for the conditions and branches to transform
-            for (Module::iterator mi = M.begin(), me = M.end(); mi != me; ++mi) {
-                for (Function::iterator fi = mi->begin(), fe = mi->end(); fi != fe; ++fi) {
-                    // fi->setName("");
-                    Instruction *tbb = fi->getTerminator();
-                    if (tbb->getOpcode() == Instruction::Br) {
-                        BranchInst *br = (BranchInst *)(tbb);
-                        if (br->isConditional()) {
-                            FCmpInst *cond = (FCmpInst *)br->getCondition();
-                            unsigned opcode = cond->getOpcode();
-                            if (opcode == Instruction::FCmp) {
-                                if (cond->getPredicate() == FCmpInst::FCMP_TRUE) {
-                                    toDelete.push_back(cond); // The condition
-                                    toEdit.push_back(tbb);    // The branch using the condition
-                                }
+        // replace True with
+        std::vector<Instruction *> toEdit, toDelete;
+        Twine * varX = new Twine("x");
+        Value * x1 =ConstantInt::get(Type::getInt64Ty(M.getContext()), 100, false);
+        GlobalVariable 	*x = new GlobalVariable(M, Type::getInt64Ty(M.getContext()), false,
+                                                   GlobalValue::ExternalLinkage, (Constant * )x1,
+                                                   *varX);
+        // Looking for the conditions and branches to transform
+        for (Module::iterator mi = M.begin(), me = M.end(); mi != me; ++mi) {
+            for (Function::iterator fi = mi->begin(), fe = mi->end(); fi != fe; ++fi) {
+                // fi->setName("");
+                Instruction *tbb = fi->getTerminator();
+                if (tbb->getOpcode() == Instruction::Br) {
+                    BranchInst *br = (BranchInst *)(tbb);
+                    if (br->isConditional()) {
+                        FCmpInst *cond = (FCmpInst *)br->getCondition();
+                        unsigned opcode = cond->getOpcode();
+                        if (opcode == Instruction::FCmp) {
+                            if (cond->getPredicate() == FCmpInst::FCMP_TRUE) {
+                                toDelete.push_back(cond); // The condition
+                                toEdit.push_back(tbb);    // The branch using the condition
                             }
                         }
                     }
                 }
-            }
-            // Replacing all the branches we found
-            for (std::vector<Instruction *>::iterator i = toEdit.begin();
-                 i != toEdit.end(); ++i) {
-                // if y < 10 || x*(x+1) % 2 == 0
-                opX = new LoadInst((Value *)x, "", (*i));
-                opY = new LoadInst((Value *)y, "", (*i));
+                for(BasicBlock::iterator bi = fi->begin(); bi != fi->end(); bi++) {
+                    if(bi->isBinaryOp()) {
+                        unsigned opcode = bi->getOpcode();
+                        if(opcode == Instruction::Add || opcode == Instruction::Sub || opcode == Instruction::Mul || opcode == Instruction::SDiv){
+                            LoadInst* op = new LoadInst ((Value *)x, "", &(*bi));
+                            //ConstantInt* CI = dyn_cast<llvm::ConstantInt>(op);
 
-                op = BinaryOperator::Create(
-                        Instruction::Sub, (Value *)opX,
-                        ConstantInt::get(Type::getInt32Ty(M.getContext()), 1, false), "",
-                        (*i));
-                op1 =
-                        BinaryOperator::Create(Instruction::Mul, (Value *)opX, op, "", (*i));
-                op = BinaryOperator::Create(
-                        Instruction::URem, op1,
-                        ConstantInt::get(Type::getInt32Ty(M.getContext()), 2, false), "",
-                        (*i));
-                condition = new ICmpInst(
+                            BinaryOperator* bop = BinaryOperator::Create(Instruction::Add,
+                                                                         (Value*) op,
+                                                                         CastInst::CreateIntegerCast(bi->getOperand(0),Type::getInt64Ty(M.getContext()),false,"",&(*bi)),
+                                                                         "",
+                                                                         &(*bi));
+                            StoreInst* sop = new StoreInst((Value*)bop, (Value*)x, &(*bi));
+                        }
+                    }
+                }
+            }
+        }
+        BinaryOperator* op = NULL;
+        LoadInst * opX;
+        // Replacing all the branches we found
+        for (std::vector<Instruction *>::iterator i = toEdit.begin();
+            i != toEdit.end(); ++i) {
+            opX = new LoadInst ((Value *)x, "", (*i));
+            int random = rand() % 4;
+            int mod_num[4] = {2,6,24,120};
+            op = modCalc(op, x, random + 1, (*i));
+            op = BinaryOperator::Create(Instruction::SRem,
+                                        op,
+                                        ConstantInt::get(Type::getInt64Ty(M.getContext()), mod_num[random], false),
+                                        "",
+                                        (*i));
+            ICmpInst *condition = new ICmpInst(
                         (*i), ICmpInst::ICMP_EQ, op,
-                        ConstantInt::get(Type::getInt32Ty(M.getContext()), 0, false));
-                condition2 = new ICmpInst(
-                        (*i), ICmpInst::ICMP_SLT, opY,
-                        ConstantInt::get(Type::getInt32Ty(M.getContext()), 10, false));
-                op1 = BinaryOperator::Create(Instruction::Or, (Value *)condition,
-                                             (Value *)condition2, "", (*i));
-
-                BranchInst::Create(((BranchInst *)*i)->getSuccessor(0),
-                                   ((BranchInst *)*i)->getSuccessor(1), (Value *)op1,
+                        ConstantInt::get(Type::getInt64Ty(M.getContext()), 0, false));
+            BranchInst::Create(((BranchInst *)*i)->getSuccessor(0),
+                                   ((BranchInst *)*i)->getSuccessor(1), (Value *)condition,
                                    ((BranchInst *)*i)->getParent());
-                (*i)->eraseFromParent(); // erase the branch
-            }
+            (*i)->eraseFromParent(); // erase the branch
+        }
             // Erase all the associated conditions we found
             for (std::vector<Instruction *>::iterator i = toDelete.begin();
                  i != toDelete.end(); ++i) {
@@ -350,7 +345,30 @@ namespace {
             }
             return true;
         }
+
+
+        BinaryOperator *modCalc(BinaryOperator *op,  GlobalVariable *x, int flag, Instruction *i);
     };
 };
+BinaryOperator* Bogus::modCalc(BinaryOperator* op,  GlobalVariable *x, int flag, Instruction *i){
+    if(flag < 0) {
+        return op;
+    }
+    if(op == NULL){
+        op = BinaryOperator::Create(Instruction::Mul,
+                                    ConstantInt::get(Type::getInt64Ty(i->getContext()), 1, false),
+                                    ConstantInt::get(Type::getInt64Ty(i->getContext()), 1, false),
+                                    "",
+                                    i);
+    }
+    LoadInst* opX = new LoadInst ((Value *)x, "", i);
+    BinaryOperator* tmp = BinaryOperator::Create(Instruction::Add,
+                                                 ConstantInt::get(Type::getInt64Ty(i->getContext()), flag, false),
+                                                 (Value *)opX,
+                                                 "",
+                                                 i);
+    op = BinaryOperator::Create(Instruction::Mul, op, tmp, "", i);
+    return modCalc(op, x, --flag, i);
+}
 char Bogus::ID = 0;
 static RegisterPass<Bogus> Y("bogus", "bogus control flow");

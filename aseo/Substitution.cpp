@@ -3,7 +3,6 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include <cstdlib>
-#include <ctime>
 using namespace llvm;
 namespace {
     struct Substitution : public FunctionPass {
