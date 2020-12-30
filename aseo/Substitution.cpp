@@ -131,8 +131,8 @@ void Substitution::addDoubleNeg(BinaryOperator *bo) {
         op_srem = BinaryOperator::Create(Instruction::Mul, op_srem, bo->getOperand(0), "", bo);
         op_srem = BinaryOperator::Create(Instruction::SRem, op_srem, two, "", bo);
         op = BinaryOperator::Create(Instruction::Add, op, op_srem, "", bo);
+        bo->replaceAllUsesWith(op);
     }
-    bo->replaceAllUsesWith(op);
 }
 
 // Implementation of  r = rand (); a = b + r; a = a + c; a = a - r
@@ -186,9 +186,6 @@ void Substitution::subNeg(BinaryOperator *bo) {
         op =
                 BinaryOperator::Create(Instruction::Add, bo->getOperand(0), op, "", bo);
 
-        // Check signed wrap
-        // op->setHasNoSignedWrap(bo->hasNoSignedWrap());
-        // op->setHasNoUnsignedWrap(bo->hasNoUnsignedWrap());
     } else {
         op = BinaryOperator::CreateFNeg(bo->getOperand(1), "", bo);
         op = BinaryOperator::Create(Instruction::FAdd, bo->getOperand(0), op, "",
