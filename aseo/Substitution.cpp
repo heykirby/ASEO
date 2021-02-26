@@ -14,23 +14,23 @@ namespace {
         void (Substitution::*funcXor[2])(BinaryOperator *bo);
 
         Substitution() : FunctionPass(ID) {
-            funcAdd[0] = &Substitution::addNeg;
-            funcAdd[1] = &Substitution::addDoubleNeg;
-            funcAdd[2] = &Substitution::addRand;
-            funcAdd[3] = &Substitution::addRand2;
+            funcAdd[0] = &Substitution::addDoubleNeg;
+            //funcAdd[1] = &Substitution::addNeg;
+            //funcAdd[2] = &Substitution::addRand;
+            //funcAdd[3] = &Substitution::addRand2;
 
             funcSub[0] = &Substitution::subNeg;
-            funcSub[1] = &Substitution::subRand;
-            funcSub[2] = &Substitution::subRand2;
+            //funcSub[1] = &Substitution::subRand;
+            //funcSub[2] = &Substitution::subRand2;
 
             funcAnd[0] = &Substitution::andSubstitution;
-            funcAnd[1] = &Substitution::andSubstitutionRand;
+            //funcAnd[1] = &Substitution::andSubstitutionRand;
 
             funcOr[0] = &Substitution::orSubstitution;
-            funcOr[1] = &Substitution::orSubstitutionRand;
+            //funcOr[1] = &Substitution::orSubstitutionRand;
 
             funcXor[0] = &Substitution::xorSubstitution;
-            funcXor[1] = &Substitution::xorSubstitutionRand;
+            //funcXor[1] = &Substitution::xorSubstitutionRand;
         };
         bool runOnFunction(Function &F);
 
@@ -59,35 +59,37 @@ static RegisterPass<Substitution> X("substitution", "operators substitution");
 
 bool Substitution::runOnFunction(Function &F) {
     int addKey, subKey, andKey, orKey, xorKey;
-    for(int times = 10; times >= 0; times--){
-        for(Function::iterator bb = F.begin(); bb != F.end(); bb++) {
-            for(BasicBlock:: iterator inst = bb->begin(); inst != bb->end(); inst++) {
-                if(inst->isBinaryOp()) {
-                    switch (inst->getOpcode()) {
-                        case BinaryOperator::Add:
-                            (this->*funcAdd[addKey % 4])(cast<BinaryOperator>(inst));
-                            ++addKey;
-                            break;
-                        /*case BinaryOperator::Sub:
-                            (this->*funcSub[subKey % 3])(cast<BinaryOperator>(inst));
-                            ++subKey;
-                            break;
-                        case BinaryOperator::And:
-                            (this->*funcAnd[andKey % 2])(cast<BinaryOperator>(inst));
-                            ++andKey;
-                            break;
-                        case BinaryOperator::Or:
-                            (this->*funcOr[orKey % 2])(cast<BinaryOperator>(inst));
-                            ++orKey;
-                            break;
-                        case BinaryOperator::Xor:
-                            (this->*funcXor[xorKey % 2])(cast<BinaryOperator>(inst));
-                            ++xorKey;
-                            break;*/
-                        default:
-                            break;
-                    }
+    int obf_times = 1;
+    for(Function::iterator bb = F.begin(); bb != F.end(); bb++) {
+        for(BasicBlock:: iterator inst = bb->begin(); inst != bb->end(); inst++) {
+            if(inst->isBinaryOp()) {
+                obf_times--;
+                switch (inst->getOpcode()) {
+                    case BinaryOperator::Add:
+                        (this->*funcAdd[addKey % 1])(cast<BinaryOperator>(inst));
+                        ++addKey;
+                        break;
+                    /*case BinaryOperator::Sub:
+                        (this->*funcSub[subKey % 1])(cast<BinaryOperator>(inst));
+                        ++subKey;
+                        break;
+                    case BinaryOperator::And:
+                        (this->*funcAnd[andKey % 1])(cast<BinaryOperator>(inst));
+                        ++andKey;
+                        break;
+                    case BinaryOperator::Or:
+                        (this->*funcOr[orKey % 1])(cast<BinaryOperator>(inst));
+                        ++orKey;
+                        break;
+                    case BinaryOperator::Xor:
+                        (this->*funcXor[xorKey % 1])(cast<BinaryOperator>(inst));
+                        ++xorKey;
+                        break;*/
+                    default:
+                        break;
                 }
+                if(obf_times < 0)
+                    break;
             }
         }
     }
@@ -96,20 +98,28 @@ bool Substitution::runOnFunction(Function &F) {
 
 // Implementation of a = b - (-c)
 void Substitution::addNeg(BinaryOperator *bo) {
-    BinaryOperator *op = NULL;
+    BinaryOperator *op, *left, *right;
     BinaryOperator *op_srem = NULL;
-
     if (bo->getOpcode() == Instruction::Add) {
-        op = BinaryOperator::CreateNeg(bo->getOperand(1), "", bo);
-        op = BinaryOperator::Create(Instruction::Sub, bo->getOperand(0), op, "", bo);
-
         Type* ty = bo->getType();
         ConstantInt *one = (ConstantInt *)ConstantInt::get(ty, 1);
+        ConstantInt *zero = (ConstantInt *)ConstantInt::get(ty, 0);
         ConstantInt *two = (ConstantInt *)ConstantInt::get(ty, 2);
-        op_srem = BinaryOperator::Create(Instruction::Add,bo->getOperand(0), one, "", bo);
-        op_srem = BinaryOperator::Create(Instruction::Mul, op_srem, bo->getOperand(0), "", bo);
-        op_srem = BinaryOperator::Create(Instruction::SRem, op_srem, two, "", bo);
-        op = BinaryOperator::Create(Instruction::Add, op, op_srem, "", bo);
+        ConstantInt *r = (ConstantInt *)ConstantInt::get(ty, 1024);
+        ConstantInt *high = (ConstantInt*)ConstantInt::get(ty,0xFFFF0000);
+        ConstantInt *low = (ConstantInt*)ConstantInt::get(ty,0x0000FFFF);
+        //op_srem = BinaryOperator::Create(Instruction::Add,bo->getOperand(0), one, "", bo);
+        //op_srem = BinaryOperator::Create(Instruction::Mul, op_srem, bo->getOperand(0), "", bo);
+        //op_srem = BinaryOperator::Create(Instruction::SRem, op_srem, two, "", bo);
+        Value* left_value = bo->getOperand(0);
+        Value* right_value = bo->getOperand(1);
+        Value* left_high = BinaryOperator::Create(Instruction::And,left_value,high,"",bo);
+        Value* left_low = BinaryOperator::Create(Instruction::And,left_value,low,"",bo);
+        Value* right_high = BinaryOperator::Create(Instruction::And,right_value,high,"",bo);
+        Value* right_low = BinaryOperator::Create(Instruction::And,right_value,low,"",bo);
+        left = BinaryOperator::Create(Instruction::Add,left_high,right_high,"",bo);
+        right = BinaryOperator::Create(Instruction::Or,left_low,right_low,"",bo);
+        op = BinaryOperator::Create(Instruction::Add, left, right, "", bo);
         bo->replaceAllUsesWith(op);
     }
 }
@@ -158,41 +168,33 @@ void Substitution::addRand(BinaryOperator *bo) {
 
 // Implementation of r = rand (); a = b - r; a = a + b; a = a + r
 void Substitution::addRand2(BinaryOperator *bo) {
-    BinaryOperator *op = NULL;
     BinaryOperator *op_srem = NULL;
+    Type *ty = bo->getType();
     if (bo->getOpcode() == Instruction::Add) {
-        Type *ty = bo->getType();
-        ConstantInt *co = (ConstantInt *)ConstantInt::get(ty, rand());
-        op = BinaryOperator::Create(Instruction::Sub, bo->getOperand(0), co, "", bo);
-        op = BinaryOperator::Create(Instruction::Add, op, bo->getOperand(1), "", bo);
-        op = BinaryOperator::Create(Instruction::Add, op, co, "", bo);
-
         ConstantInt *one = (ConstantInt *)ConstantInt::get(ty, 1);
         ConstantInt *two = (ConstantInt *)ConstantInt::get(ty, 2);
         op_srem = BinaryOperator::Create(Instruction::Add,bo->getOperand(0), one, "", bo);
         op_srem = BinaryOperator::Create(Instruction::Mul, op_srem, bo->getOperand(0), "", bo);
         op_srem = BinaryOperator::Create(Instruction::SRem, op_srem, two, "", bo);
-        op = BinaryOperator::Create(Instruction::Add, op, op_srem, "", bo);
-        bo->replaceAllUsesWith(op);
+        op_srem = BinaryOperator::Create(Instruction::Add, bo, op_srem, "", bo);
+        bo->replaceAllUsesWith(op_srem);
     }
 }
 
 // Implementation of a = b + (-c)
 void Substitution::subNeg(BinaryOperator *bo) {
-    BinaryOperator *op = NULL;
-
+    BinaryOperator *op_srem, *op= NULL;
+    Type *ty = bo->getType();
     if (bo->getOpcode() == Instruction::Sub) {
-        op = BinaryOperator::CreateNeg(bo->getOperand(1), "", bo);
-        op =
-                BinaryOperator::Create(Instruction::Add, bo->getOperand(0), op, "", bo);
-
-    } else {
-        op = BinaryOperator::CreateFNeg(bo->getOperand(1), "", bo);
-        op = BinaryOperator::Create(Instruction::FAdd, bo->getOperand(0), op, "",
-                                    bo);
+        ConstantInt *one = (ConstantInt *)ConstantInt::get(ty, 1);
+        ConstantInt *two = (ConstantInt *)ConstantInt::get(ty, 2);
+        op_srem = BinaryOperator::Create(Instruction::Add,bo->getOperand(0), one, "", bo);
+        op_srem = BinaryOperator::Create(Instruction::Mul, op_srem, bo->getOperand(0), "", bo);
+        op_srem = BinaryOperator::Create(Instruction::SRem, op_srem, two, "", bo);
+        op = BinaryOperator::Create(Instruction::Sub, bo->getOperand(0), bo->getOperand(1),"",bo);
+        op_srem = BinaryOperator::Create(Instruction::Sub, op, op_srem, "",bo);
+        bo->replaceAllUsesWith(op_srem);
     }
-
-    bo->replaceAllUsesWith(op);
 }
 
 // Implementation of  r = rand (); a = b + r; a = a - c; a = a - r
@@ -257,18 +259,20 @@ void Substitution::subRand2(BinaryOperator *bo) {
 
 // Implementation of a = b & c => a = (b^~c)& b
 void Substitution::andSubstitution(BinaryOperator *bo) {
-    BinaryOperator *op = NULL;
+    BinaryOperator* left, *right,*op;
+    Type *ty = bo->getType();
+    if (bo->getOpcode() == Instruction::And){
+        ConstantInt *one = (ConstantInt *)ConstantInt::get(ty, 1);
+        ConstantInt *two = (ConstantInt *)ConstantInt::get(ty, 2);
+        ConstantInt *r = (ConstantInt *)ConstantInt::get(ty, 1024);
+        left = BinaryOperator::Create(Instruction::Sub, bo->getOperand(0), r, "",bo);
+        left = BinaryOperator::Create(Instruction::Add, left, r,"",bo);
+        right = BinaryOperator::Create(Instruction::Sub, bo->getOperand(1), r, "",bo);
+        right = BinaryOperator::Create(Instruction::Add, right, r,"",bo);
+        op = BinaryOperator::Create(Instruction::And,left,right,"",bo);
+        bo->replaceAllUsesWith(op);
+    }
 
-    // Create NOT on second operand => ~c
-    op = BinaryOperator::CreateNot(bo->getOperand(1), "", bo);
-
-    // Create XOR => (b^~c)
-    BinaryOperator *op1 =
-            BinaryOperator::Create(Instruction::Xor, bo->getOperand(0), op, "", bo);
-
-    // Create AND => (b^~c) & b
-    op = BinaryOperator::Create(Instruction::And, op1, bo->getOperand(0), "", bo);
-    bo->replaceAllUsesWith(op);
 }
 
 // Implementation of a = a && b <=> !(!a | !b) && (r | !r)
@@ -308,65 +312,25 @@ void Substitution::andSubstitutionRand(BinaryOperator *bo) {
 }
 
 // Implementation of a = b | c => a = (b & c) | (b ^ c)
-void Substitution::orSubstitutionRand(BinaryOperator *bo) {
-
+void Substitution::orSubstitution(BinaryOperator *bo) {
+    BinaryOperator* left, *right,*op;
     Type *ty = bo->getType();
-    ConstantInt *co =
-            (ConstantInt *)ConstantInt::get(ty, rand());
-
-    // !a
-    BinaryOperator *op = BinaryOperator::CreateNot(bo->getOperand(0), "", bo);
-
-    // !b
-    BinaryOperator *op1 = BinaryOperator::CreateNot(bo->getOperand(1), "", bo);
-
-    // !r
-    BinaryOperator *op2 = BinaryOperator::CreateNot(co, "", bo);
-
-    // !a && r
-    BinaryOperator *op3 =
-            BinaryOperator::Create(Instruction::And, op, co, "", bo);
-
-    // a && !r
-    BinaryOperator *op4 =
-            BinaryOperator::Create(Instruction::And, bo->getOperand(0), op2, "", bo);
-
-    // !b && r
-    BinaryOperator *op5 =
-            BinaryOperator::Create(Instruction::And, op1, co, "", bo);
-
-    // b && !r
-    BinaryOperator *op6 =
-            BinaryOperator::Create(Instruction::And, bo->getOperand(1), op2, "", bo);
-
-    // (!a && r) || (a && !r)
-    op3 = BinaryOperator::Create(Instruction::Or, op3, op4, "", bo);
-
-    // (!b && r) ||(b && !r)
-    op4 = BinaryOperator::Create(Instruction::Or, op5, op6, "", bo);
-
-    // (!a && r) || (a && !r) ^ (!b && r) ||(b && !r)
-    op5 = BinaryOperator::Create(Instruction::Xor, op3, op4, "", bo);
-
-    // !a || !b
-    op3 = BinaryOperator::Create(Instruction::Or, op, op1, "", bo);
-
-    // !(!a || !b)
-    op3 = BinaryOperator::CreateNot(op3, "", bo);
-
-    // r || !r
-    op4 = BinaryOperator::Create(Instruction::Or, co, op2, "", bo);
-
-    // !(!a || !b) && (r || !r)
-    op4 = BinaryOperator::Create(Instruction::And, op3, op4, "", bo);
-
-    // [(!a && r) || (a && !r) ^ (!b && r) ||(b && !r) ] || [!(!a || !b) && (r ||
-    // !r)]
-    op = BinaryOperator::Create(Instruction::Or, op5, op4, "", bo);
-    bo->replaceAllUsesWith(op);
+    if (bo->getOpcode() == Instruction::Or){
+        ConstantInt *one = (ConstantInt *)ConstantInt::get(ty, 1);
+        ConstantInt *two = (ConstantInt *)ConstantInt::get(ty, 2);
+        ConstantInt *r = (ConstantInt *)ConstantInt::get(ty, 1025);
+        Value* left_value = bo->getOperand(0);
+        Value* right_value = bo->getOperand(1);
+        left = BinaryOperator::Create(Instruction::Sub, left_value, r, "",bo);
+        left = BinaryOperator::Create(Instruction::Add, left, r,"",bo);
+        right = BinaryOperator::Create(Instruction::Sub, right_value, r, "",bo);
+        right = BinaryOperator::Create(Instruction::Add, right, r,"",bo);
+        op = BinaryOperator::Create(Instruction::Or,left,right,"",bo);
+        bo->replaceAllUsesWith(op);
+    }
 }
 
-void Substitution::orSubstitution(BinaryOperator *bo) {
+void Substitution::orSubstitutionRand(BinaryOperator *bo) {
     BinaryOperator *op = NULL;
 
     // Creating first operand (b & c)
@@ -384,27 +348,19 @@ void Substitution::orSubstitution(BinaryOperator *bo) {
 
 // Implementation of a = a ~ b => a = (!a && b) || (a && !b)
 void Substitution::xorSubstitution(BinaryOperator *bo) {
-    BinaryOperator *op = NULL;
-
-    // Create NOT on first operand
-    op = BinaryOperator::CreateNot(bo->getOperand(0), "", bo); // !a
-
-    // Create AND
-    op = BinaryOperator::Create(Instruction::And, bo->getOperand(1), op, "",
-                                bo); // !a && b
-
-    // Create NOT on second operand
-    BinaryOperator *op1 =
-            BinaryOperator::CreateNot(bo->getOperand(1), "", bo); // !b
-
-    // Create AND
-    op1 = BinaryOperator::Create(Instruction::And, bo->getOperand(0), op1, "",
-                                 bo); // a && !b
-
-    // Create OR
-    op = BinaryOperator::Create(Instruction::Or, op, op1, "",
-                                bo); // (!a && b) || (a && !b)
-    bo->replaceAllUsesWith(op);
+    BinaryOperator* left, *right,*op;
+    Type *ty = bo->getType();
+    if (bo->getOpcode() == Instruction::Xor){
+        ConstantInt *one = (ConstantInt *)ConstantInt::get(ty, 1);
+        ConstantInt *two = (ConstantInt *)ConstantInt::get(ty, 2);
+        ConstantInt *r = (ConstantInt *)ConstantInt::get(ty, 1025);
+        left = BinaryOperator::Create(Instruction::Sub, bo->getOperand(0), r, "",bo);
+        left = BinaryOperator::Create(Instruction::Add, left, r,"",bo);
+        right = BinaryOperator::Create(Instruction::Sub, bo->getOperand(1), r, "",bo);
+        right = BinaryOperator::Create(Instruction::Add, right, r,"",bo);
+        op = BinaryOperator::Create(Instruction::Xor,left,right,"",bo);
+        bo->replaceAllUsesWith(op);
+    }
 }
 
 // implementation of a = a ^ b <=> (a ^ r) ^ (b ^ r) <=> (!a && r || a && !r) ^

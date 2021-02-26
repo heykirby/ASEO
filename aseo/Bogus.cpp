@@ -12,24 +12,27 @@ using namespace llvm;
 namespace {
     struct Bogus: public FunctionPass{
         static char ID;
+        std::vector<BasicBlock*> basicBlocks;
     Bogus() : FunctionPass(ID){};
     virtual bool runOnFunction(Function& F) override{
         bogus(F);
         return true;
     }
     void bogus(Function& F){
-        std::list<BasicBlock*> basicBlocks;
+        if(F.getName() == "Var2File" || F.getName() == "File2Var"|| F.getName() == "RSHash"
+           || F.getName() == "rsa" || F.getName() == "quick_pow")return;
         for(Function::iterator i = F.begin(); i != F.end(); i++){
             basicBlocks.push_back(&*i);
             break;
         }
+        int obf_times = 2;
         while(!basicBlocks.empty()){
-            BasicBlock* basicBlock = basicBlocks.front();
+            BasicBlock* basicBlock = basicBlocks.back();
             addBogusFlow(basicBlock, F);
-            basicBlocks.pop_front();
+            basicBlocks.pop_back();
         }
     }
-    virtual  void addBogusFlow(BasicBlock* basicBlock, Function& F){
+    virtual void addBogusFlow(BasicBlock* basicBlock, Function& F){
         BasicBlock::iterator i1 = basicBlock->begin();
         if(basicBlock->getFirstNonPHIOrDbgOrLifetime()){
             i1 = (BasicBlock::iterator)basicBlock->getFirstNonPHIOrDbgOrLifetime();
@@ -38,38 +41,37 @@ namespace {
         BBName = new Twine("originBB");
         BasicBlock* originBB = basicBlock->splitBasicBlock(i1, *BBName);
         Twine* alterBBName;
-        alterBBName = new Twine("alteredBB");
-        BasicBlock* alterBB = createAlteredBasicBlock(originBB, *alterBBName, &F);
-        alterBB->getTerminator()->eraseFromParent();
+        alterBBName = new Twine("fakeBB");
+        //BasicBlock* alterBB = createAlteredBasicBlock(originBB, *alterBBName, &F);
+        BasicBlock* alterBB = BasicBlock::Create(F.getContext(),"",&F);
+        //BasicBlock* alterBB = BasicBlock::Create(F.getContext(),"fake basic block",&F);
+        //alterBB->getTerminator()->eraseFromParent();
         basicBlock->getTerminator()->eraseFromParent();
-        errs()<<basicBlock->size()<<"\n";
-        errs()<<"erase success\n";
         Value* LHS = ConstantFP::get(Type::getFloatTy(F.getContext()), 1.0);
         Value* RHS = ConstantFP::get(Type::getFloatTy(F.getContext()), 2.0);
         Twine* var4 = new Twine("conditions");
         FCmpInst* condition = new FCmpInst(*basicBlock, FCmpInst::FCMP_TRUE, LHS, RHS, *var4);
-        errs()<<basicBlock->size()<<"\n";
 
         BranchInst::Create(originBB, alterBB, (Value*)condition, basicBlock);
-        BranchInst::Create(originBB, alterBB);
+        if(basicBlocks.size() > 1)
+            BranchInst::Create(basicBlocks.at(1 + rand() % (basicBlocks.size()-1)), alterBB);
+        else
+            BranchInst::Create(originBB, alterBB);
 
         Twine* var5 = new Twine("originalBBpart2");
         BasicBlock::iterator i = originBB->end();
         BasicBlock *originalBBpart2 = originBB->splitBasicBlock(--i, *var5);
-        errs()<<"success split originalbb\n";
         originBB->getTerminator()->eraseFromParent();
-        errs()<<"success originbb erase\n";
         Twine* var6 = new Twine("condition2");
         FCmpInst *condition2 = new FCmpInst(*originBB, CmpInst::FCMP_TRUE, LHS, RHS, *var6);
         BranchInst::Create(originalBBpart2, alterBB, (Value *)condition2, originBB);
-        //return;
+        return;
         doF(*F.getParent());
     }
     virtual BasicBlock *createAlteredBasicBlock(BasicBlock *basicBlock, const Twine &Name = "gen", Function *F = 0) {
             // Useful to remap the informations concerning instructions.
             ValueToValueMapTy VMap;
             BasicBlock *alteredBB = llvm::CloneBasicBlock(basicBlock, VMap, Name, F);
-            DEBUG_WITH_TYPE("gen", errs() << "bcf: Original basic block cloned\n");
             // Remap operands.
             BasicBlock::iterator ji = basicBlock->begin();
             for (BasicBlock::iterator i = alteredBB->begin(), e = alteredBB->end();
@@ -81,11 +83,8 @@ namespace {
                     Value *v = MapValue(*opi, VMap, RF_None, 0);
                     if (v != 0) {
                         *opi = v;
-                        DEBUG_WITH_TYPE("gen",
-                                        errs() << "bcf: Value's operand has been setted\n");
                     }
                 }
-                DEBUG_WITH_TYPE("gen", errs() << "bcf: Operands remapped\n");
                 // Remap phi nodes' incoming blocks.
                 if (PHINode *pn = dyn_cast<PHINode>(i)) {
                     for (unsigned j = 0, e = pn->getNumIncomingValues(); j != e; ++j) {
@@ -95,24 +94,15 @@ namespace {
                         }
                     }
                 }
-                DEBUG_WITH_TYPE("gen", errs() << "bcf: PHINodes remapped\n");
                 // Remap attached metadata.
                 SmallVector<std::pair<unsigned, MDNode *>, 4> MDs;
                 i->getAllMetadata(MDs);
-                DEBUG_WITH_TYPE("gen", errs() << "bcf: Metadatas remapped\n");
                 // important for compiling with DWARF, using option -g.
                 i->setDebugLoc(ji->getDebugLoc());
                 ji++;
-                DEBUG_WITH_TYPE("gen", errs()
-                        << "bcf: Debug information location setted\n");
 
             } // The instructions' informations are now all correct
 
-            DEBUG_WITH_TYPE("gen",
-                            errs() << "bcf: The cloned basic block is now correct\n");
-            DEBUG_WITH_TYPE(
-                    "gen",
-                    errs() << "bcf: Starting to add junk code in the cloned bloc...\n");
 
             // add random instruction in the middle of the bloc. This part can be
             // improve
@@ -322,7 +312,7 @@ namespace {
         for (std::vector<Instruction *>::iterator i = toEdit.begin();
             i != toEdit.end(); ++i) {
             opX = new LoadInst ((Value *)x, "", (*i));
-            int random = rand() % 4;
+            int random = 0 % 4;
             int mod_num[4] = {2,6,24,120};
             op = modCalc(op, x, random + 1, (*i));
             op = BinaryOperator::Create(Instruction::SRem,

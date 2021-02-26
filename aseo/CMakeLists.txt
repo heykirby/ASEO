@@ -1,5 +1,10 @@
 add_library(ObfPass MODULE
         Bogus.cpp
         Substitution.cpp
-        CallFunc.cpp
+        Hash.cpp
+        StoreVar.cpp
+        Explode.cpp
+        Congru.cpp
+        FunctionInstCounter.cpp
+        RSA.cpp
         )
